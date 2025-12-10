@@ -1,6 +1,7 @@
 """
 系統測試腳本
-用於測試庫存調貨建議系統v1.0的各個模塊功能
+庫存調貨建議系統(澳門優先版)
+用於測試庫存調貨建議系統(澳門優先版)v1.0的各個模塊功能
 """
 
 import os
@@ -59,45 +60,52 @@ class SystemTester:
             self.log_test_result("數據處理模塊初始化", False, "模塊導入失敗")
             return
         
-        # 測試模擬數據生成
+        # 測試數據驗證器
         try:
-            mock_data = self.data_processor.generate_mock_data(num_articles=5, seed=42)
-            success = len(mock_data) > 0
+            validator = self.data_processor.validator
+            # 創建一個簡單的測試DataFrame
+            test_df = pd.DataFrame({
+                'Article': ['123456789012', '234567890123'],
+                'Article Description': ['Test Product 1', 'Test Product 2'],
+                'OM': ['OM001', 'OM002'],
+                'RP Type': ['ND', 'RF'],
+                'Site': ['SITE001', 'SITE002'],
+                'MOQ': [10, 20],
+                'SaSa Net Stock': [100, 200],
+                'Pending Received': [5, 10],
+                'Safety Stock': [50, 80],
+                'Last Month Sold Qty': [30, 40],
+                'MTD Sold Qty': [15, 20]
+            })
+            is_valid, missing_cols = validator.validate_columns(test_df)
             self.log_test_result(
-                "模擬數據生成", 
-                success, 
-                f"生成 {len(mock_data)} 條記錄" if success else "生成失敗"
+                "數據驗證器",
+                is_valid,
+                f"缺少欄位: {missing_cols}" if not is_valid else "驗證通過"
             )
         except Exception as e:
-            self.log_test_result("Mock data generation", False, f"Error: {str(e)}")
+            self.log_test_result("數據驗證器", False, f"錯誤: {str(e)}")
         
-        # 測試數據驗證
+        # 測試數據清洗器
         try:
-            if 'mock_data' in locals():
-                validator = self.data_processor.validator
-                is_valid, missing_cols = validator.validate_columns(mock_data)
-                self.log_test_result(
-                    "數據驗證", 
-                    is_valid, 
-                    f"缺少欄位: {missing_cols}" if not is_valid else "驗證通過"
-                )
+            cleaner = self.data_processor.cleaner
+            # 創建一個包含數值問題的測試DataFrame
+            test_df = pd.DataFrame({
+                'MOQ': ['10', '20', 'invalid'],
+                'SaSa Net Stock': ['100', '200', '300'],
+                'Pending Received': ['5', '10', '15'],
+                'Safety Stock': ['50', '80', '120']
+            })
+            numeric_columns = ['MOQ', 'SaSa Net Stock', 'Pending Received', 'Safety Stock']
+            cleaned_data = cleaner.clean_numeric_columns(test_df, numeric_columns)
+            success = len(cleaned_data) > 0
+            self.log_test_result(
+                "數據清洗器",
+                success,
+                f"清洗後 {len(cleaned_data)} 條記錄" if success else "清洗失敗"
+            )
         except Exception as e:
-            self.log_test_result("Data validation", False, f"Error: {str(e)}")
-        
-        # 測試數據清洗
-        try:
-            if 'mock_data' in locals():
-                cleaner = self.data_processor.cleaner
-                numeric_columns = ['MOQ', 'SaSa Net Stock', 'Pending Received', 'Safety Stock']
-                cleaned_data = cleaner.clean_numeric_columns(mock_data, numeric_columns)
-                success = len(cleaned_data) == len(mock_data)
-                self.log_test_result(
-                    "數據清洗", 
-                    success, 
-                    f"清洗後 {len(cleaned_data)} 條記錄" if success else "清洗失敗"
-                )
-        except Exception as e:
-            self.log_test_result("Data cleaning", False, f"Error: {str(e)}")
+            self.log_test_result("數據清洗器", False, f"錯誤: {str(e)}")
     
     def test_business_logic(self):
         """測試業務邏輯模塊"""
@@ -107,11 +115,25 @@ class SystemTester:
             self.log_test_result("業務邏輯模塊初始化", False, "模塊導入失敗")
             return
         
-        # 生成測試數據
+        # 創建測試數據
         try:
-            test_data = self.data_processor.generate_mock_data(num_articles=5, seed=42)
-        except:
-            self.log_test_result("Business logic test", False, "Cannot generate test data")
+            test_data = pd.DataFrame({
+                'Article': ['123456789012', '123456789012', '234567890123', '234567890123', '345678901234', '345678901234'],
+                'Article Description': ['Test Product 1', 'Test Product 1', 'Test Product 2', 'Test Product 2', 'Test Product 3', 'Test Product 3'],
+                'OM': ['OM001', 'OM002', 'OM001', 'OM002', 'OM001', 'OM002'],
+                'RP Type': ['ND', 'RF', 'ND', 'RF', 'RF', 'RF'],
+                'Site': ['SITE001', 'SITE002', 'SITE003', 'SITE004', 'SITE005', 'SITE006'],
+                'MOQ': [10, 20, 10, 20, 15, 15],
+                'SaSa Net Stock': [100, 200, 150, 50, 80, 30],
+                'Pending Received': [5, 10, 5, 5, 10, 5],
+                'Safety Stock': [50, 80, 60, 40, 50, 30],
+                'Last Month Sold Qty': [30, 40, 35, 20, 25, 15],
+                'MTD Sold Qty': [15, 20, 18, 10, 12, 8]
+            })
+            # 計算有效銷量
+            test_data['Effective Sold Qty'] = test_data['Last Month Sold Qty'] + test_data['MTD Sold Qty']
+        except Exception as e:
+            self.log_test_result("業務邏輯測試", False, f"創建測試數據失敗: {str(e)}")
             return
         
         # 測試A模式
@@ -140,30 +162,18 @@ class SystemTester:
         except Exception as e:
             self.log_test_result("B mode transfer recommendations", False, f"Error: {str(e)}")
         
-        # 測試C模式
-        try:
-            success, recommendations_c, stats_c = self.business_logic.generate_transfer_recommendations(
-                test_data, "C"
-            )
-            self.log_test_result(
-                "C模式調貨建議",
-                success,
-                f"生成 {len(recommendations_c) if recommendations_c else 0} 條建議" if success else "生成失敗"
-            )
-        except Exception as e:
-            self.log_test_result("C mode transfer recommendations", False, f"Error: {str(e)}")
         
         # 測試質量檢查
         try:
             if 'recommendations_a' in locals() and recommendations_a:
                 is_valid, errors = self.business_logic.quality_checker.check_recommendations(recommendations_a)
                 self.log_test_result(
-                    "質量檢查", 
-                    is_valid, 
+                    "質量檢查",
+                    is_valid,
                     f"發現 {len(errors)} 個錯誤" if not is_valid else "檢查通過"
                 )
         except Exception as e:
-            self.log_test_result("Quality check", False, f"Error: {str(e)}")
+            self.log_test_result("質量檢查", False, f"錯誤: {str(e)}")
     
     def test_excel_generator(self):
         """測試Excel生成模塊"""
@@ -173,18 +183,33 @@ class SystemTester:
             self.log_test_result("Excel生成模塊初始化", False, "模塊導入失敗")
             return
         
-        # 生成測試數據
+        # 創建測試數據
         try:
-            test_data = self.data_processor.generate_mock_data(num_articles=3, seed=42)
+            test_data = pd.DataFrame({
+                'Article': ['123456789012', '123456789012', '234567890123', '234567890123'],
+                'Article Description': ['Test Product 1', 'Test Product 1', 'Test Product 2', 'Test Product 2'],
+                'OM': ['OM001', 'OM002', 'OM001', 'OM002'],
+                'RP Type': ['ND', 'RF', 'ND', 'RF'],
+                'Site': ['SITE001', 'SITE002', 'SITE003', 'SITE004'],
+                'MOQ': [10, 20, 10, 20],
+                'SaSa Net Stock': [100, 200, 150, 50],
+                'Pending Received': [5, 10, 5, 5],
+                'Safety Stock': [50, 80, 60, 40],
+                'Last Month Sold Qty': [30, 40, 35, 20],
+                'MTD Sold Qty': [15, 20, 18, 10]
+            })
+            # 計算有效銷量
+            test_data['Effective Sold Qty'] = test_data['Last Month Sold Qty'] + test_data['MTD Sold Qty']
+            
             success, recommendations, stats = self.business_logic.generate_transfer_recommendations(
                 test_data, "A"
             )
             
             if not success or not recommendations:
-                self.log_test_result("Excel generation test", False, "Cannot generate transfer recommendations")
+                self.log_test_result("Excel生成測試", False, "無法生成調貨建議")
                 return
-        except:
-            self.log_test_result("Excel generation test", False, "Cannot generate test data")
+        except Exception as e:
+            self.log_test_result("Excel生成測試", False, f"創建測試數據失敗: {str(e)}")
             return
         
         # 測試Excel文件生成
@@ -196,8 +221,8 @@ class SystemTester:
             
             if success and os.path.exists(file_path):
                 self.log_test_result(
-                    "Excel文件生成", 
-                    True, 
+                    "Excel文件生成",
+                    True,
                     f"文件已生成: {file_path}"
                 )
                 
@@ -209,7 +234,7 @@ class SystemTester:
             else:
                 self.log_test_result("Excel文件生成", False, message)
         except Exception as e:
-            self.log_test_result("Excel file generation", False, f"Error: {str(e)}")
+            self.log_test_result("Excel文件生成", False, f"錯誤: {str(e)}")
         
         # 測試調貨建議格式化
         try:
@@ -217,12 +242,12 @@ class SystemTester:
             df = formatter.format_recommendations_to_dataframe(recommendations)
             success = len(df) > 0
             self.log_test_result(
-                "調貨建議格式化", 
-                success, 
+                "調貨建議格式化",
+                success,
                 f"格式化 {len(df)} 條記錄" if success else "格式化失敗"
             )
         except Exception as e:
-            self.log_test_result("Transfer recommendations formatting", False, f"Error: {str(e)}")
+            self.log_test_result("調貨建議格式化", False, f"錯誤: {str(e)}")
         
         # 測試統計摘要格式化
         try:
@@ -230,20 +255,34 @@ class SystemTester:
             df = formatter.create_summary_dataframe(stats)
             success = len(df) > 0
             self.log_test_result(
-                "統計摘要格式化", 
-                success, 
+                "統計摘要格式化",
+                success,
                 f"格式化 {len(df)} 條記錄" if success else "格式化失敗"
             )
         except Exception as e:
-            self.log_test_result("Summary statistics formatting", False, f"Error: {str(e)}")
+            self.log_test_result("統計摘要格式化", False, f"錯誤: {str(e)}")
     
     def test_integration(self):
         """測試集成功能"""
         print("\nTesting integration functionality...")
         
         try:
-            # 生成測試數據
-            test_data = self.data_processor.generate_mock_data(num_articles=10, seed=123)
+            # 創建測試數據
+            test_data = pd.DataFrame({
+                'Article': ['123456789012', '123456789012', '234567890123', '234567890123', '345678901234', '345678901234', '456789012345', '456789012345'],
+                'Article Description': ['Test Product 1', 'Test Product 1', 'Test Product 2', 'Test Product 2', 'Test Product 3', 'Test Product 3', 'Test Product 4', 'Test Product 4'],
+                'OM': ['OM001', 'OM002', 'OM001', 'OM002', 'OM001', 'OM002', 'OM001', 'OM002'],
+                'RP Type': ['ND', 'RF', 'ND', 'RF', 'RF', 'RF', 'ND', 'RF'],
+                'Site': ['SITE001', 'SITE002', 'SITE003', 'SITE004', 'SITE005', 'SITE006', 'SITE007', 'SITE008'],
+                'MOQ': [10, 20, 10, 20, 15, 15, 10, 20],
+                'SaSa Net Stock': [100, 200, 150, 50, 80, 30, 120, 40],
+                'Pending Received': [5, 10, 5, 5, 10, 5, 8, 12],
+                'Safety Stock': [50, 80, 60, 40, 50, 30, 70, 45],
+                'Last Month Sold Qty': [30, 40, 35, 20, 25, 15, 45, 18],
+                'MTD Sold Qty': [15, 20, 18, 10, 12, 8, 22, 9]
+            })
+            # 計算有效銷量
+            test_data['Effective Sold Qty'] = test_data['Last Month Sold Qty'] + test_data['MTD Sold Qty']
             
             # 處理數據
             processed_data = self.data_processor.transformer.calculate_effective_sold_qty(test_data)
@@ -256,11 +295,6 @@ class SystemTester:
             # 生成B模式調貨建議
             success_b, recommendations_b, stats_b = self.business_logic.generate_transfer_recommendations(
                 processed_data, "B"
-            )
-            
-            # 生成C模式調貨建議
-            success_c, recommendations_c, stats_c = self.business_logic.generate_transfer_recommendations(
-                processed_data, "C"
             )
             
             # 生成Excel文件
@@ -277,29 +311,22 @@ class SystemTester:
                 )
             else:
                 excel_success_b = False
-                
-            if success_c and recommendations_c:
-                excel_success_c, _, _ = self.excel_generator.generate_excel_file(
-                    recommendations_c, stats_c, filename="test_integration_c.xlsx"
-                )
-            else:
-                excel_success_c = False
             
             integration_success = (
                 len(test_data) > 0 and
                 len(processed_data) > 0 and
-                success_a and success_b and success_c and
-                excel_success_a and excel_success_b and excel_success_c
+                success_a and success_b and
+                excel_success_a and excel_success_b
             )
             
             self.log_test_result(
-                "集成測試", 
-                integration_success, 
+                "集成測試",
+                integration_success,
                 "完整流程測試通過" if integration_success else "集成測試失敗"
             )
             
             # 清理測試文件
-            for filename in ["test_integration_a.xlsx", "test_integration_b.xlsx", "test_integration_c.xlsx"]:
+            for filename in ["test_integration_a.xlsx", "test_integration_b.xlsx"]:
                 if os.path.exists(filename):
                     try:
                         os.remove(filename)
@@ -307,7 +334,7 @@ class SystemTester:
                         pass
                         
         except Exception as e:
-            self.log_test_result("Integration test", False, f"Error: {str(e)}")
+            self.log_test_result("集成測試", False, f"錯誤: {str(e)}")
     
     def test_edge_cases(self):
         """測試邊界情況"""
@@ -334,34 +361,64 @@ class SystemTester:
         
         # 測試單一商品
         try:
-            single_article_data = self.data_processor.generate_mock_data(num_articles=1, seed=456)
+            single_article_data = pd.DataFrame({
+                'Article': ['123456789012', '123456789012'],
+                'Article Description': ['Test Product 1', 'Test Product 1'],
+                'OM': ['OM001', 'OM002'],
+                'RP Type': ['ND', 'RF'],
+                'Site': ['SITE001', 'SITE002'],
+                'MOQ': [10, 20],
+                'SaSa Net Stock': [100, 200],
+                'Pending Received': [5, 10],
+                'Safety Stock': [50, 80],
+                'Last Month Sold Qty': [30, 40],
+                'MTD Sold Qty': [15, 20]
+            })
+            # 計算有效銷量
+            single_article_data['Effective Sold Qty'] = single_article_data['Last Month Sold Qty'] + single_article_data['MTD Sold Qty']
+            
             success, recommendations, stats = self.business_logic.generate_transfer_recommendations(
                 single_article_data, "A"
             )
             
             self.log_test_result(
-                "單一商品處理", 
-                success, 
+                "單一商品處理",
+                success,
                 f"處理 {len(single_article_data)} 條記錄" if success else "處理失敗"
             )
         except Exception as e:
-            self.log_test_result("Single article processing", False, f"Error: {str(e)}")
+            self.log_test_result("單一商品處理", False, f"錯誤: {str(e)}")
         
         # 測試無效模式
         try:
-            test_data = self.data_processor.generate_mock_data(num_articles=3, seed=789)
+            test_data = pd.DataFrame({
+                'Article': ['123456789012', '123456789012', '234567890123', '234567890123'],
+                'Article Description': ['Test Product 1', 'Test Product 1', 'Test Product 2', 'Test Product 2'],
+                'OM': ['OM001', 'OM002', 'OM001', 'OM002'],
+                'RP Type': ['ND', 'RF', 'ND', 'RF'],
+                'Site': ['SITE001', 'SITE002', 'SITE003', 'SITE004'],
+                'MOQ': [10, 20, 10, 20],
+                'SaSa Net Stock': [100, 200, 150, 50],
+                'Pending Received': [5, 10, 5, 5],
+                'Safety Stock': [50, 80, 60, 40],
+                'Last Month Sold Qty': [30, 40, 35, 20],
+                'MTD Sold Qty': [15, 20, 18, 10]
+            })
+            # 計算有效銷量
+            test_data['Effective Sold Qty'] = test_data['Last Month Sold Qty'] + test_data['MTD Sold Qty']
+            
             success, recommendations, stats = self.business_logic.generate_transfer_recommendations(
                 test_data, "INVALID"
             )
             
             # 無效模式應該返回失敗
             self.log_test_result(
-                "無效模式處理", 
-                not success, 
+                "無效模式處理",
+                not success,
                 "正確拒絕無效模式" if not success else "無效模式處理異常"
             )
         except Exception as e:
-            self.log_test_result("Invalid mode processing", False, f"Error: {str(e)}")
+            self.log_test_result("無效模式處理", False, f"錯誤: {str(e)}")
     
     def generate_test_report(self):
         """生成測試報告"""

@@ -1,6 +1,6 @@
 """
 Streamlit主應用程序 v1.9
-庫存調貨建議系統v1.0的用戶界面和應用程序流程控制
+庫存調貨建議系統(澳門優先版)v1.0的用戶界面和應用程序流程控制
 """
 
 import streamlit as st
@@ -19,7 +19,7 @@ from excel_generator import ExcelGenerator
 
 # 設置頁面配置
 st.set_page_config(
-    page_title="庫存調貨建議系統 v1.0",
+    page_title="庫存調貨建議系統(澳門優先版) v1.0",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -71,7 +71,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 class InventoryTransferApp:
-    """庫存調貨建議系統主應用類"""
+    """庫存調貨建議系統(澳門優先版)主應用類"""
     
     def __init__(self):
         self.data_processor = DataProcessor()
@@ -90,7 +90,7 @@ class InventoryTransferApp:
     
     def render_header(self):
         """渲染頁面標題"""
-        st.markdown('<h1 class="main-header">📦 庫存調貨建議系統 v1.0</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 class="main-header">📦 庫存調貨建議系統(澳門優先版) v1.0</h1>', unsafe_allow_html=True)
         st.markdown("---")
     
     def render_sidebar(self):
@@ -101,8 +101,7 @@ class InventoryTransferApp:
         st.sidebar.subheader("🔧 轉貨模式選擇")
         mode_options = {
             "A": "A模式 (保守轉貨)",
-            "B": "B模式 (加強轉貨)",
-            "C": "C模式 (全量轉貨)"
+            "B": "B模式 (加強轉貨)"
         }
         
         selected_mode = st.sidebar.selectbox(
@@ -122,22 +121,12 @@ class InventoryTransferApp:
             - 轉出類型為RF過剩轉出
             - 適合保守的庫存管理策略
             """)
-        elif selected_mode == "B":
+        else:  # selected_mode == "B"
             st.sidebar.info("""
             **B模式 (加強轉貨)**
             - 轉出後剩餘庫存可能低於安全庫存
             - 轉出類型包括RF過剩轉出和RF加強轉出
             - 適合積極的庫存優化策略
-            """)
-        else:
-            st.sidebar.info("""
-            **C模式 (全量轉貨)**
-            - 忽視A模式及B模式的限制
-            - ND Shop可以轉去ND Shop
-            - 需要限制同一個OM組別及同一個Article
-            - 轉出店舖的銷售量必須為同組最少
-            - 接收店舖的銷售量必須為同組最多
-            - 轉出店舖的銷售量如果為0件，轉出數量可全數轉出
             """)
         
         st.sidebar.markdown("---")
@@ -145,7 +134,7 @@ class InventoryTransferApp:
         # 系統信息
         st.sidebar.subheader("ℹ️ 系統信息")
         st.sidebar.text(f"當前時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        st.sidebar.text("版本: v1.0")
+        st.sidebar.text("版本: v1.0 (澳門優先版)")
         
         # 重置按鈕
         if st.sidebar.button("🔄 重置系統", type="secondary"):
@@ -193,30 +182,26 @@ class InventoryTransferApp:
                         st.error(f"❌ 文件處理失敗: {result}")
         
         with col2:
-            st.subheader("生成模擬數據")
-            st.info("如果沒有真實數據，可以使用模擬數據進行測試")
+            st.subheader("數據說明")
+            st.info("請上傳Excel文件進行分析")
             
-            # 模擬數據參數
-            num_articles = st.slider("商品數量", min_value=5, max_value=50, value=10)
-            seed = st.number_input("隨機種子", value=42, step=1)
-            
-            if st.button("🎲 生成模擬數據", type="primary"):
-                with st.spinner("正在生成模擬數據..."):
-                    mock_data = self.data_processor.generate_mock_data(num_articles, seed)
-                    st.session_state.processed_data = mock_data
-                    st.success("✅ 模擬數據生成成功！")
-                    
-                    # 顯示數據統計
-                    stats = {
-                        'total_rows': len(mock_data),
-                        'unique_articles': mock_data['Article'].nunique(),
-                        'unique_sites': mock_data['Site'].nunique(),
-                        'nd_sites': len(mock_data[mock_data['RP Type'] == 'ND']['Site'].unique()),
-                        'rf_sites': len(mock_data[mock_data['RP Type'] == 'RF']['Site'].unique()),
-                        'total_stock': mock_data['SaSa Net Stock'].sum(),
-                        'total_safety_stock': mock_data['Safety Stock'].sum()
-                    }
-                    self.display_processing_stats(stats)
+            # 顯示數據格式要求
+            st.markdown("""
+            **數據文件要求**:
+            - 文件格式：.xlsx
+            - 必需欄位：
+              - Article（商品編號）
+              - Article Description（商品描述）
+              - OM（OM編號）
+              - RP Type（店鋪類型：ND或RF）
+              - Site（店鋪代碼）
+              - MOQ（最低派貨數量）
+              - SaSa Net Stock（淨庫存）
+              - Pending Received（待收貨數量）
+              - Safety Stock（安全庫存）
+              - Last Month Sold Qty（上月銷量）
+              - MTD Sold Qty（本月銷量）
+            """)
     
     def display_processing_stats(self, stats):
         """顯示數據處理統計"""
@@ -262,7 +247,7 @@ class InventoryTransferApp:
             st.markdown('<h2 class="sub-header">🔍 調貨分析</h2>', unsafe_allow_html=True)
             
             # 生成調貨建議按鈕
-            if st.button("🚀 生成調貨建議", type="primary", use_container_width=True):
+            if st.button("🚀 生成調貨建議", type="primary", width='stretch'):
                 with st.spinner("正在生成調貨建議..."):
                     success, result, stats = self.business_logic.generate_transfer_recommendations(
                         st.session_state.processed_data, st.session_state.mode
@@ -336,7 +321,7 @@ class InventoryTransferApp:
             df = pd.DataFrame(recommendations)
             
             # 顯示數據表格
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
             
             # 提供搜索和篩選功能
             if st.checkbox("啟用搜索和篩選"):
@@ -360,7 +345,7 @@ class InventoryTransferApp:
                 if selected_transfer_site != "全部":
                     filtered_df = filtered_df[filtered_df['Transfer Site'] == selected_transfer_site]
                 
-                st.dataframe(filtered_df, use_container_width=True)
+                st.dataframe(filtered_df, width='stretch')
         else:
             st.info("沒有生成調貨建議")
     
@@ -408,7 +393,7 @@ class InventoryTransferApp:
         
         with col1:
             # 生成Excel文件
-            if st.button("📊 生成Excel文件", type="primary"):
+            if st.button("📊 生成Excel文件", type="primary", width='stretch'):
                 with st.spinner("正在生成Excel文件..."):
                     success, message, file_path = self.excel_generator.generate_excel_file(
                         st.session_state.recommendations,
@@ -447,14 +432,14 @@ class InventoryTransferApp:
             shutil.rmtree(temp_dir)
         
         st.success("系統已重置")
-        st.experimental_rerun()
+        st.rerun()
     
     def render_footer(self):
         """渲染頁腳"""
         st.markdown("---")
         st.markdown("""
         <div style='text-align: center; color: #666; font-size: 0.8em;'>
-        庫存調貨建議系統 v1.0 | 基於Streamlit構建 | © 2025
+        庫存調貨建議系統(澳門優先版) v1.0 | 基於Streamlit構建 | © 2025
         </div>
         """, unsafe_allow_html=True)
     

@@ -1,6 +1,7 @@
 """
 數據預處理模塊 v1.8.1
-負責Excel文件讀取、數據驗證、清洗和轉換，以及模擬數據生成
+庫存調貨建議系統(澳門優先版)
+負責Excel文件讀取、數據驗證、清洗和轉換
 """
 
 import pandas as pd
@@ -228,131 +229,6 @@ class DataTransformer:
         return df_transformed
 
 
-class MockDataGenerator:
-    """模擬數據生成器，生成測試用模擬數據"""
-    
-    @staticmethod
-    def generate_mock_articles(num_articles: int = 20) -> List[str]:
-        """
-        生成模擬商品編號
-        
-        Args:
-            num_articles: 商品數量
-            
-        Returns:
-            商品編號列表
-        """
-        return [f"{i:012d}" for i in range(100000000000, 100000000000 + num_articles)]
-    
-    @staticmethod
-    def generate_mock_descriptions(num_articles: int = 20) -> List[str]:
-        """
-        生成模擬商品描述
-        
-        Args:
-            num_articles: 商品數量
-            
-        Returns:
-            商品描述列表
-        """
-        descriptions = []
-        for i in range(num_articles):
-            desc = f"商品{i+1:03d}測試描述"
-            descriptions.append(desc)
-        return descriptions
-    
-    @staticmethod
-    def generate_mock_sites() -> List[Dict]:
-        """
-        生成模擬店鋪信息
-        
-        Returns:
-            店鋪信息列表
-        """
-        sites = []
-        
-        # ND類型店鋪
-        for i in range(1, 6):
-            sites.append({
-                'OM': f'OM{i:02d}',
-                'RP Type': 'ND',
-                'Site': f'ND{i:03d}'
-            })
-        
-        # RF類型店鋪 - 包括HA, H, HC, HD類型
-        rf_sites = [
-            {'prefix': 'HA', 'count': 3},
-            {'prefix': 'H', 'count': 3},
-            {'prefix': 'HC', 'count': 3},
-            {'prefix': 'HD', 'count': 3}
-        ]
-        
-        for site_type in rf_sites:
-            for i in range(1, site_type['count'] + 1):
-                sites.append({
-                    'OM': f'OM{len(sites)+1:02d}',
-                    'RP Type': 'RF',
-                    'Site': f"{site_type['prefix']}{i:03d}"
-                })
-        
-        return sites
-    
-    @staticmethod
-    def generate_mock_inventory_data(num_articles: int = 20, seed: int = 42) -> pd.DataFrame:
-        """
-        生成完整的模擬庫存數據
-        
-        Args:
-            num_articles: 商品數量
-            seed: 隨機種子
-            
-        Returns:
-            模擬庫存數據框
-        """
-        np.random.seed(seed)
-        
-        # 生成基本數據
-        articles = MockDataGenerator.generate_mock_articles(num_articles)
-        descriptions = MockDataGenerator.generate_mock_descriptions(num_articles)
-        sites = MockDataGenerator.generate_mock_sites()
-        
-        # 創建數據行
-        data_rows = []
-        
-        for article_idx, (article, description) in enumerate(zip(articles, descriptions)):
-            for site in sites:
-                # 生成隨機數據
-                moq = np.random.randint(1, 6)
-                safety_stock = np.random.randint(5, 20)
-                net_stock = np.random.randint(0, 50)
-                pending_received = np.random.randint(0, 20)
-                last_month_sold = np.random.randint(0, 30)
-                mtd_sold = np.random.randint(0, 20)
-                
-                # 為某些店鋪創建缺貨情況
-                if site['RP Type'] == 'RF' and np.random.random() < 0.3:
-                    net_stock = 0
-                    pending_received = 0
-                
-                # 為某些店鋪創建過剩庫存
-                if site['RP Type'] == 'RF' and np.random.random() < 0.2:
-                    net_stock = safety_stock + np.random.randint(10, 30)
-                
-                data_rows.append({
-                    'Article': article,
-                    'Article Description': description,
-                    'OM': site['OM'],
-                    'RP Type': site['RP Type'],
-                    'Site': site['Site'],
-                    'MOQ': moq,
-                    'SaSa Net Stock': net_stock,
-                    'Pending Received': pending_received,
-                    'Safety Stock': safety_stock,
-                    'Last Month Sold Qty': last_month_sold,
-                    'MTD Sold Qty': mtd_sold
-                })
-        
-        return pd.DataFrame(data_rows)
 
 
 class DataProcessor:
@@ -362,7 +238,6 @@ class DataProcessor:
         self.validator = DataValidator()
         self.cleaner = DataCleaner()
         self.transformer = DataTransformer()
-        self.mock_generator = MockDataGenerator()
     
     def process_uploaded_file(self, file_path: str) -> Tuple[bool, Union[pd.DataFrame, str], Dict]:
         """
@@ -439,33 +314,4 @@ class DataProcessor:
             logger.error(f"處理文件時發生錯誤: {str(e)}")
             return False, f"處理文件時發生錯誤: {str(e)}", {}
     
-    def generate_mock_data(self, num_articles: int = 20, seed: int = 42) -> pd.DataFrame:
-        """
-        生成模擬數據
-        
-        Args:
-            num_articles: 商品數量
-            seed: 隨機種子
-            
-        Returns:
-            模擬數據框
-        """
-        df = self.mock_generator.generate_mock_inventory_data(num_articles, seed)
-        
-        # 應用相同的處理流程
-        df = self.transformer.calculate_effective_sold_qty(df)
-        
-        return df
 
-
-# 測試代碼
-if __name__ == "__main__":
-    processor = DataProcessor()
-    
-    # 測試模擬數據生成
-    mock_data = processor.generate_mock_data(num_articles=5)
-    print("模擬數據生成測試:")
-    print(mock_data.head())
-    print(f"數據形狀: {mock_data.shape}")
-    print(f"商品數量: {mock_data['Article'].nunique()}")
-    print(f"店鋪數量: {mock_data['Site'].nunique()}")

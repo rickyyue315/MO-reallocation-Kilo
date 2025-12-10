@@ -1,6 +1,7 @@
 """
 依賴安裝腳本
-用於自動安裝庫存調貨建議系統v1.0所需的所有依賴包
+庫存調貨建議系統(澳門優先版)
+用於自動安裝庫存調貨建議系統(澳門優先版)v1.0所需的所有依賴包
 """
 
 import subprocess
@@ -246,7 +247,7 @@ class DependencyInstaller:
         
         try:
             with open("requirements.txt", "w", encoding="utf-8") as f:
-                f.write("# 庫存調貨建議系統v1.0依賴包\n")
+                f.write("# 庫存調貨建議系統(澳門優先版)v1.0依賴包\n")
                 f.write("# 核心依賴\n")
                 for dep in self.CORE_DEPENDENCIES:
                     f.write(f"{dep}\n")
@@ -265,7 +266,7 @@ class DependencyInstaller:
 
 def main():
     """主函數"""
-    print("🚀 庫存調貨建議系統v1.0 - 依賴安裝腳本")
+    print("🚀 庫存調貨建議系統(澳門優先版)v1.0 - 依賴安裝腳本")
     print("=" * 50)
     
     # 創建安裝器實例

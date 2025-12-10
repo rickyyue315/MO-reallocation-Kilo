@@ -1,6 +1,7 @@
 """
 業務邏輯模塊 v1.9
-實現調貨算法和業務規則，包括A模式(保守轉貨)和B模式(加強轉貨)
+庫存調貨建議系統(澳門優先版)
+實現調貨算法和業務規則，包括A模式(保守轉貨)、B模式(加強轉貨)和C模式(全量轉貨)
 """
 
 import pandas as pd
@@ -93,7 +94,10 @@ class TransferModeA:
         upper_limit = np.maximum(total_stock * 0.4, 2)
         
         # 實際轉出 = min(基礎可轉出, max(上限控制, 2))
-        rf_candidates['available_quantity'] = np.minimum(basic_transferable, upper_limit)
+        calculated_quantity = np.floor(np.minimum(basic_transferable, upper_limit)).astype(int)
+        
+        # 確保可轉出數量不超過SaSa Net Stock
+        rf_candidates['available_quantity'] = np.minimum(calculated_quantity, rf_candidates['SaSa Net Stock'])
         
         # 確保轉出後剩餘庫存不低於安全庫存
         remaining_stock = total_stock - rf_candidates['available_quantity']
@@ -163,7 +167,10 @@ class TransferModeB:
         upper_limit = np.maximum(total_stock * 0.8, 2)
         
         # 實際轉出 = min(基礎可轉出, max(上限控制, 2))
-        rf_candidates['available_quantity'] = np.minimum(basic_transferable, upper_limit)
+        calculated_quantity = np.floor(np.minimum(basic_transferable, upper_limit)).astype(int)
+        
+        # 確保可轉出數量不超過SaSa Net Stock
+        rf_candidates['available_quantity'] = np.minimum(calculated_quantity, rf_candidates['SaSa Net Stock'])
         
         # 判斷轉出類型
         remaining_stock = total_stock - rf_candidates['available_quantity']
@@ -374,26 +381,27 @@ class MatchingAlgorithm:
         Args:
             transfer_site: 轉出店鋪
             receive_site: 接收店鋪
-            
+        
         Returns:
             是否可以轉貨
         """
-        # HA店舖,H店舖,HC店舖可以出貨去HD店舖
-        # HD店舖絕對不能出貨去HA店舖,H店舖,HC店舖
-        # HA店舖,H店舖,HC店舖轉去HA店舖,H店舖,HC店舖需限制同組OM, 但轉去HD店舖不受OM限制
+        # HA店舖,HB店舖,HC店舖可以出貨去HD店舖
+        # HD店舖絕對不能出貨去HA店舖,HB店舖,HC店舖
+        # HA店舖,HB店舖,HC店舖轉去HA店舖,HB店舖,HC店舖需限制同組OM, 但轉去HD店舖不受OM限制
         
         transfer_prefix = transfer_site[:2] if len(transfer_site) >= 2 else ""
         receive_prefix = receive_site[:2] if len(receive_site) >= 2 else ""
         
-        # HD店舖絕對不能出貨去HA店舖,H店舖,HC店舖
-        if transfer_prefix == "HD" and receive_prefix in ["HA", "H", "HC"]:
+        # HD店舖絕對不能出貨去HA店舖,HB店舖,HC店舖
+        if transfer_prefix == "HD" and receive_prefix in ["HA", "HB", "HC"]:
             return False
         
         # 其他情況都允許
         return True
     
     @staticmethod
-    def check_om_restriction(transfer_om: str, transfer_site: str, receive_site: str) -> bool:
+    def check_om_restriction(transfer_om: str, transfer_site: str, receive_site: str,
+                           transfer_candidates: pd.DataFrame, receive_candidates: pd.DataFrame) -> bool:
         """
         檢查OM限制
         
@@ -401,17 +409,24 @@ class MatchingAlgorithm:
             transfer_om: 轉出店鋪的OM
             transfer_site: 轉出店鋪
             receive_site: 接收店鋪
-            
+            transfer_candidates: 轉出候選數據框
+            receive_candidates: 接收候選數據框
+        
         Returns:
             是否符合OM限制
         """
         transfer_prefix = transfer_site[:2] if len(transfer_site) >= 2 else ""
         receive_prefix = receive_site[:2] if len(receive_site) >= 2 else ""
         
-        # HA店舖,H店舖,HC店舖轉去HA店舖,H店舖,HC店舖需限制同組OM
-        if (transfer_prefix in ["HA", "H", "HC"] and 
-            receive_prefix in ["HA", "H", "HC"]):
-            return False  # 暫時簡化，實際需要檢查OM是否相同
+        # HA店舖,HB店舖,HC店舖轉去HA店舖,HB店舖,HC店舖需限制同組OM
+        if (transfer_prefix in ["HA", "HB", "HC"] and
+            receive_prefix in ["HA", "HB", "HC"]):
+            # 需要檢查接收店鋪的OM是否與轉出店鋪相同
+            receive_sites = receive_candidates[receive_candidates['Site'] == receive_site]
+            if len(receive_sites) > 0:
+                receive_om = receive_sites['OM'].iloc[0]
+                if transfer_om != receive_om:
+                    return False
         
         # 轉去HD店舖不受OM限制
         return True
@@ -443,18 +458,43 @@ class MatchingAlgorithm:
             if len(article_transfer) == 0 or len(article_receive) == 0:
                 continue
             
+            # 計算總供給和總需求
+            total_available = article_transfer['available_quantity'].sum()
+            total_demand = article_receive['demand_quantity'].sum()
+            
+            # 如果總供給大於總需求，則優先從銷量最差的店鋪轉出
+            if total_available > total_demand:
+                # 按銷量從低到高排序（銷量最差的排前面）
+                article_transfer_sorted = article_transfer.sort_values(by='Effective Sold Qty', ascending=True)
+            else:
+                # 否則按原優先級處理
+                article_transfer_sorted = article_transfer.copy()
+
             # 按優先級順序進行匹配
-            for transfer_type, receive_priority in MatchingAlgorithm.MATCHING_PRIORITY:
-                # 獲取當前優先級的轉出和接收候選
-                current_transfer = article_transfer[article_transfer['transfer_type'] == transfer_type.value].copy()
-                current_receive = article_receive[article_receive['receive_priority'] == receive_priority.value].copy()
+            # 注意：當供給大於需求時，優先級由銷量排序決定
+            for _, transfer_row in article_transfer_sorted.iterrows():
+                # 檢查是否還有需求
+                remaining_demand = article_receive['demand_quantity'].sum()
+                if remaining_demand <= 0:
+                    break
                 
-                if len(current_transfer) == 0 or len(current_receive) == 0:
-                    continue
-                
-                # 執行匹配
-                for _, transfer_row in current_transfer.iterrows():
-                    for _, receive_row in current_receive.iterrows():
+                # 按優先級順序尋找接收候選
+                for transfer_type, receive_priority in MatchingAlgorithm.MATCHING_PRIORITY:
+                    # 檢查當前轉出候選是否符合當前優先級
+                    if transfer_row['transfer_type'] != transfer_type.value:
+                        continue
+                    
+                    # 獲取當前優先級的接收候選
+                    current_receive = article_receive[article_receive['receive_priority'] == receive_priority.value].copy()
+                    
+                    if len(current_receive) == 0:
+                        continue
+                    
+                    # 按需求量從大到小排序接收候選，優先滿足需求大的店鋪
+                    current_receive_sorted = current_receive.sort_values(by='demand_quantity', ascending=False)
+                    
+                    # 執行匹配
+                    for _, receive_row in current_receive_sorted.iterrows():
                         # 檢查店鋪之間是否可以轉貨
                         if not MatchingAlgorithm.can_transfer_between_sites(
                             transfer_row['Site'], receive_row['Site']
@@ -463,15 +503,19 @@ class MatchingAlgorithm:
                         
                         # 檢查OM限制
                         if not MatchingAlgorithm.check_om_restriction(
-                            transfer_row['OM'], transfer_row['Site'], receive_row['Site']
+                            transfer_row['OM'], transfer_row['Site'], receive_row['Site'],
+                            article_transfer, article_receive
                         ):
                             continue
                         
                         # 計算轉移數量
-                        transfer_qty = min(
+                        transfer_qty = int(min(
                             transfer_row['available_quantity'],
                             receive_row['demand_quantity']
-                        )
+                        ))
+                        
+                        # 確保轉出數量不超過轉出店鋪的SaSa Net Stock
+                        transfer_qty = min(transfer_qty, transfer_row['SaSa Net Stock'])
                         
                         if transfer_qty <= 0:
                             continue
@@ -479,7 +523,10 @@ class MatchingAlgorithm:
                         # 調貨數量優化：如果只有1件，嘗試調高到2件
                         if transfer_qty == 1:
                             # 檢查是否可以增加到2件
-                            if transfer_row['available_quantity'] >= 2:
+                            # 必須同時滿足：available_quantity >= 2, SaSa Net Stock >= 2, 且 demand_quantity >= 2
+                            if (transfer_row['available_quantity'] >= 2 and
+                                transfer_row['SaSa Net Stock'] >= 2 and
+                                receive_row['demand_quantity'] >= 2):
                                 transfer_qty = 2
                         
                         # 創建調貨建議
@@ -490,11 +537,17 @@ class MatchingAlgorithm:
                         transfer_recommendations.append(recommendation)
                         
                         # 更新轉出和接收候選的剩餘數量
-                        transfer_idx = transfer_candidates.index.get_loc(transfer_row.name)
-                        receive_idx = receive_candidates.index.get_loc(receive_row.name)
-                        
                         transfer_candidates.at[transfer_row.name, 'available_quantity'] -= transfer_qty
                         receive_candidates.at[receive_row.name, 'demand_quantity'] -= transfer_qty
+                        article_transfer.at[transfer_row.name, 'available_quantity'] -= transfer_qty
+                        article_receive.at[receive_row.name, 'demand_quantity'] -= transfer_qty
+                        
+                        # 直接更新當前轉出行的可用數量，確保下次循環使用最新值
+                        transfer_row['available_quantity'] -= transfer_qty
+                        
+                        # 如果轉出店鋪已無可轉數量，則跳出內層循環
+                        if transfer_row['available_quantity'] <= 0:
+                            break
         
         return transfer_recommendations
     
@@ -527,7 +580,7 @@ class MatchingAlgorithm:
             'Transfer Site': transfer_row['Site'],
             'Receive OM': receive_row['OM'],
             'Receive Site': receive_row['Site'],
-            'Transfer Qty': transfer_qty,
+            'Transfer Qty': int(transfer_qty),
             'Transfer Site Original Stock': transfer_row['original_stock'],
             'Transfer Site After Transfer Stock': transfer_after_stock,
             'Transfer Site Safety Stock': transfer_row['Safety Stock'],
@@ -564,7 +617,18 @@ class QualityChecker:
             # (這個檢查在創建建議時已經確保)
             
             # 檢查Transfer Qty必須為正整數
-            if not isinstance(rec['Transfer Qty'], int) or rec['Transfer Qty'] <= 0:
+            transfer_qty = rec['Transfer Qty']
+            # 確保是整數類型
+            if not isinstance(transfer_qty, int):
+                try:
+                    transfer_qty = int(float(transfer_qty))
+                    # 更新建議中的值
+                    rec['Transfer Qty'] = transfer_qty
+                except (ValueError, TypeError):
+                    errors.append(f"建議{i+1}: Transfer Qty必須為正整數")
+                    continue
+            
+            if transfer_qty <= 0:
                 errors.append(f"建議{i+1}: Transfer Qty必須為正整數")
             
             # 檢查Transfer Qty不得超過轉出店鋪的原始SaSa Net Stock
