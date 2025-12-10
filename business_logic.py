@@ -570,8 +570,27 @@ class MatchingAlgorithm:
         # 創建備註
         remark = transfer_row['transfer_type']
         
-        # 創建說明
-        notes = f"{transfer_row['transfer_type']} → {receive_row['receive_priority']}"
+        # 創建詳細說明，包含調貨邏輯
+        if transfer_row['transfer_type'] == TransferType.ND_TRANSFER.value:
+            transfer_logic = "ND店鋪轉出：ND類型店鋪可轉出全部淨庫存"
+        elif transfer_row['transfer_type'] == TransferType.RF_SURPLUS_TRANSFER.value:
+            transfer_logic = "RF過剩轉出：庫存充足且轉出後剩餘庫存不低於安全庫存"
+        elif transfer_row['transfer_type'] == TransferType.RF_ENHANCED_TRANSFER.value:
+            transfer_logic = "RF加強轉出：庫存超過MOQ但轉出後可能低於安全庫存"
+        elif transfer_row['transfer_type'] == TransferType.C_COMPLETE_TRANSFER.value:
+            transfer_logic = "C模式全量轉出：同OM同Article中銷量最少的店鋪可轉出全部庫存"
+        else:
+            transfer_logic = "未知轉出類型"
+        
+        if receive_row['receive_priority'] == ReceivePriority.URGENT_SHORTAGE.value:
+            receive_logic = "緊急缺貨補貨：完全無庫存+在途且曾有銷售記錄的RF店鋪"
+        elif receive_row['receive_priority'] == ReceivePriority.POTENTIAL_SHORTAGE.value:
+            receive_logic = "潛在缺貨補貨：庫存不足且有效銷量為最高值的RF店鋪"
+        else:
+            receive_logic = "未知接收優先級"
+        
+        # 創建詳細說明
+        notes = f"{transfer_row['transfer_type']} → {receive_row['receive_priority']} | {transfer_logic} | {receive_logic}"
         
         recommendation = {
             'Article': transfer_row['Article'],
