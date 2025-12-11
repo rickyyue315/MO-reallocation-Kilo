@@ -570,27 +570,46 @@ class MatchingAlgorithm:
         # 創建備註
         remark = transfer_row['transfer_type']
         
-        # 創建詳細說明，包含調貨邏輯
+        # 創建詳細說明，包含調貨邏輯和計算方式
         if transfer_row['transfer_type'] == TransferType.ND_TRANSFER.value:
-            transfer_logic = "ND店鋪轉出：ND類型店鋪可轉出全部淨庫存"
+            transfer_logic = "ND店鋪轉出：ND類型店鋪可轉出全部淨庫存，適合關閉或調整店鋪"
+            transfer_calc = "轉出數量 = 全部淨庫存"
         elif transfer_row['transfer_type'] == TransferType.RF_SURPLUS_TRANSFER.value:
-            transfer_logic = "RF過剩轉出：庫存充足且轉出後剩餘庫存不低於安全庫存"
+            transfer_logic = "RF過剩轉出：庫存充足的RF店鋪，轉出後剩餘庫存不低於安全庫存"
+            total_stock = transfer_row['SaSa Net Stock'] + transfer_row['Pending Received']
+            basic_transferable = total_stock - transfer_row['Safety Stock']
+            upper_limit = max(total_stock * 0.4, 2)
+            transfer_calc = f"轉出數量 = min(基礎可轉出{basic_transferable}, 上限控制{upper_limit})"
         elif transfer_row['transfer_type'] == TransferType.RF_ENHANCED_TRANSFER.value:
-            transfer_logic = "RF加強轉出：庫存超過MOQ但轉出後可能低於安全庫存"
+            transfer_logic = "RF加強轉出：庫存超過MOQ的RF店鋪，轉出後可能低於安全庫存"
+            total_stock = transfer_row['SaSa Net Stock'] + transfer_row['Pending Received']
+            basic_transferable = total_stock - transfer_row['MOQ']
+            upper_limit = max(total_stock * 0.8, 2)
+            transfer_calc = f"轉出數量 = min(基礎可轉出{basic_transferable}, 上限控制{upper_limit})"
         elif transfer_row['transfer_type'] == TransferType.C_COMPLETE_TRANSFER.value:
             transfer_logic = "C模式全量轉出：同OM同Article中銷量最少的店鋪可轉出全部庫存"
+            transfer_calc = "轉出數量 = 全部淨庫存（銷量為0的店鋪）"
         else:
             transfer_logic = "未知轉出類型"
+            transfer_calc = "未知計算方式"
         
         if receive_row['receive_priority'] == ReceivePriority.URGENT_SHORTAGE.value:
             receive_logic = "緊急缺貨補貨：完全無庫存+在途且曾有銷售記錄的RF店鋪"
+            receive_calc = f"需求數量 = 安全庫存 {transfer_row['Safety Stock']}"
         elif receive_row['receive_priority'] == ReceivePriority.POTENTIAL_SHORTAGE.value:
+            total_stock = receive_row['SaSa Net Stock'] + receive_row['Pending Received']
+            demand_qty = transfer_row['Safety Stock'] - total_stock
             receive_logic = "潛在缺貨補貨：庫存不足且有效銷量為最高值的RF店鋪"
+            receive_calc = f"需求數量 = 安全庫存 {transfer_row['Safety Stock']} - 總庫存 {total_stock} = {demand_qty}"
         else:
             receive_logic = "未知接收優先級"
+            receive_calc = "未知需求計算"
+        
+        # 創建澳門優先說明
+        macau_priority = "澳門優先：優先考慮澳門地區店鋪的庫存需求和銷售特點"
         
         # 創建詳細說明
-        notes = f"{transfer_row['transfer_type']} → {receive_row['receive_priority']} | {transfer_logic} | {receive_logic}"
+        notes = f"{transfer_row['transfer_type']} → {receive_row['receive_priority']} | {transfer_logic} | {receive_calc} | {transfer_calc} | {macau_priority}"
         
         recommendation = {
             'Article': transfer_row['Article'],
