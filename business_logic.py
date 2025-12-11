@@ -567,8 +567,38 @@ class MatchingAlgorithm:
         # 計算轉出後庫存
         transfer_after_stock = transfer_row['original_stock'] - transfer_qty
         
-        # 創建備註
-        remark = transfer_row['transfer_type']
+        # 獲取店鋪類別
+        transfer_site_type = transfer_row['Site'][:2] if len(transfer_row['Site']) >= 2 else ""
+        receive_site_type = receive_row['Site'][:2] if len(receive_row['Site']) >= 2 else ""
+        
+        # 創建備註，包含店鋪類別信息
+        if transfer_row['transfer_type'] == TransferType.ND_TRANSFER.value:
+            transfer_type_desc = "ND轉出"
+            if transfer_site_type == "HD":
+                remark = f"ND轉出 → HD店鋪：澳門優先，HD店鋪為主要目標"
+            else:
+                remark = f"ND轉出 → {receive_site_type}店鋪：標準轉出"
+        elif transfer_row['transfer_type'] == TransferType.RF_SURPLUS_TRANSFER.value:
+            transfer_type_desc = "RF過剩轉出"
+            if receive_site_type == "HD":
+                remark = f"RF過剩轉出 → HD店鋪：澳門優先，庫存充足轉出"
+            else:
+                remark = f"RF過剩轉出 → {receive_site_type}店鋪：標準轉出"
+        elif transfer_row['transfer_type'] == TransferType.RF_ENHANCED_TRANSFER.value:
+            transfer_type_desc = "RF加強轉出"
+            if receive_site_type == "HD":
+                remark = f"RF加強轉出 → HD店鋪：澳門優先，加強轉出支援"
+            else:
+                remark = f"RF加強轉出 → {receive_site_type}店鋪：標準加強轉出"
+        elif transfer_row['transfer_type'] == TransferType.C_COMPLETE_TRANSFER.value:
+            transfer_type_desc = "C模式全量轉出"
+            if receive_site_type == "HD":
+                remark = f"C模式全量轉出 → HD店鋪：澳門優先，全量轉出支援"
+            else:
+                remark = f"C模式全量轉出 → {receive_site_type}店鋪：標準全量轉出"
+        else:
+            transfer_type_desc = "未知轉出類型"
+            remark = f"未知轉出類型 → {receive_site_type}店鋪"
         
         # 創建詳細說明，包含調貨邏輯和計算方式
         if transfer_row['transfer_type'] == TransferType.ND_TRANSFER.value:
@@ -595,21 +625,28 @@ class MatchingAlgorithm:
         
         if receive_row['receive_priority'] == ReceivePriority.URGENT_SHORTAGE.value:
             receive_logic = "緊急缺貨補貨：完全無庫存+在途且曾有銷售記錄的RF店鋪"
+            if receive_site_type == "HD":
+                receive_logic += "，澳門優先：HD店鋪為重點補貨對象"
             receive_calc = f"需求數量 = 安全庫存 {transfer_row['Safety Stock']}"
         elif receive_row['receive_priority'] == ReceivePriority.POTENTIAL_SHORTAGE.value:
             total_stock = receive_row['SaSa Net Stock'] + receive_row['Pending Received']
             demand_qty = transfer_row['Safety Stock'] - total_stock
             receive_logic = "潛在缺貨補貨：庫存不足且有效銷量為最高值的RF店鋪"
+            if receive_site_type == "HD":
+                receive_logic += "，澳門優先：HD店鋪為重點補貨對象"
             receive_calc = f"需求數量 = 安全庫存 {transfer_row['Safety Stock']} - 總庫存 {total_stock} = {demand_qty}"
         else:
             receive_logic = "未知接收優先級"
             receive_calc = "未知需求計算"
         
         # 創建澳門優先說明
-        macau_priority = "澳門優先：優先考慮澳門地區店鋪的庫存需求和銷售特點"
+        if receive_site_type == "HD" or transfer_site_type == "HD":
+            macau_priority = "澳門優先：HD店鋪為澳門地區重點支援對象，優先考慮其庫存需求和銷售特點"
+        else:
+            macau_priority = "標準調貨：按常規優先級處理"
         
         # 創建詳細說明
-        notes = f"{transfer_row['transfer_type']} → {receive_row['receive_priority']} | {transfer_logic} | {receive_calc} | {transfer_calc} | {macau_priority}"
+        notes = f"{transfer_type_desc} → {receive_row['receive_priority']} | {transfer_logic} | {receive_calc} | {transfer_calc} | {macau_priority}"
         
         recommendation = {
             'Article': transfer_row['Article'],
